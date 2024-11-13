@@ -97,7 +97,7 @@ class ServerWorker implements Runnable {
             case GetRequest:
                 // return handleGetRequest(in);
             case MultiPutRequest:
-                handleMultiPutRequest(in);
+                return handleMultiPutRequest(in);
             case MultiGetRequest:
                 // return handleMultiGetRequest(in);
             default:
