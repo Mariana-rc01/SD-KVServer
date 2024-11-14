@@ -160,9 +160,7 @@ class ServerWorker implements Runnable {
 
             put(key, value);
 
-            DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-            out.writeBoolean(true);
-            return out;
+            return null;
         } catch (IOException e) {
             e.printStackTrace();
             return null;
@@ -201,10 +199,8 @@ class ServerWorker implements Runnable {
             }
     
             multiPut(pairs);
-    
-            DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-            out.writeBoolean(true);
-            return out;
+
+            return null;
         } catch (IOException e) {
             e.printStackTrace();
             return null;
