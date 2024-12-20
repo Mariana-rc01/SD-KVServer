@@ -468,6 +468,7 @@ public class Server {
                 throw new RuntimeException(e);
             } finally {lock.unlock();}
         }
+        serverSocket.close();
     }
 
     public static void signalClientDisconnection(){
