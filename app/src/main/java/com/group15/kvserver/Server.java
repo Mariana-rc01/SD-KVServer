@@ -10,7 +10,6 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.locks.Condition;
 import java.util.Set;
-import java.util.concurrent.locks.Condition;
 
 enum RequestType {
     AuthRequest((short)0),

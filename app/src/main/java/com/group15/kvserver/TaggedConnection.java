@@ -1,20 +1,16 @@
 package com.group15.kvserver;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.net.Socket;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class TaggedConnection implements AutoCloseable {
-    private Socket socket;
-    private DataInputStream in;
-    private DataOutputStream out;
-    private Lock rlock;
-    private Lock wlock;
+    private final Socket socket;
+    private final DataInputStream in;
+    private final DataOutputStream out;
+    private final Lock sendLock = new ReentrantLock();
+    private final Lock receiveLock = new ReentrantLock();
 
     public static class Frame {
         public final int tag;
@@ -28,41 +24,40 @@ public class TaggedConnection implements AutoCloseable {
 
     public TaggedConnection(Socket socket) throws IOException {
         this.socket = socket;
-        in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
-        out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
-        rlock = new ReentrantLock();
-        wlock = new ReentrantLock();
+        this.in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+        this.out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
     }
 
     public void send(Frame frame) throws IOException {
-        wlock.lock();
-        try {
-            out.writeInt(frame.tag);
-            out.writeInt(frame.data.length);
-            out.write(frame.data);
-            out.flush();
-        } finally {
-            wlock.unlock();
-        }
+        send(frame.tag, frame.data);
     }
 
     public void send(int tag, byte[] data) throws IOException {
-        send(new Frame(tag, data));
-    }
-
-    public Frame receive() throws IOException {
-        rlock.lock();
+        sendLock.lock();
         try {
-            int tag = in.readInt();
-            int len = in.readInt();
-            byte[] data = new byte[len];
-            in.readFully(data);
-            return new Frame(tag, data);
+            out.writeInt(tag); 
+            out.writeInt(data.length); 
+            out.write(data); 
+            out.flush();
         } finally {
-            rlock.unlock();
+            sendLock.unlock();
         }
     }
 
+    public Frame receive() throws IOException {
+        receiveLock.lock();
+        try {
+            int tag = in.readInt(); 
+            int length = in.readInt(); 
+            byte[] data = new byte[length];
+            in.readFully(data); 
+            return new Frame(tag, data);
+        } finally {
+            receiveLock.unlock();
+        }
+    }
+
+    @Override
     public void close() throws IOException {
         socket.close();
     }
