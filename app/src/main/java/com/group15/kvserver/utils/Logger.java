@@ -1,4 +1,4 @@
-package com.group15.kvservertests;
+package com.group15.kvserver.utils;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;

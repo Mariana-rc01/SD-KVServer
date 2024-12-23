@@ -53,8 +53,8 @@ tasks.register<JavaExec>("server") {
         if (project.hasProperty("args")) {
             args = (project.property("args") as String).split(",")
         } else {
-            logger.warn("No arguments passed! Using defaults: [10, 1, 1]")
-            args = listOf("10", "1", "1")
+            logger.warn("No arguments passed! Using defaults: [1, 1, 1]")
+            args = listOf("10", "40", "1")
         }
     }
 }
@@ -63,15 +63,12 @@ tasks.register<JavaExec>("tests") {
     group = "application"
     description = "Run tests"
 
-    // Set the main class (adjust the class name if needed)
-    mainClass.set("com.group15.kvservertests.Runner") // Replace with the fully qualified name of the class you want to run
+    mainClass.set("com.group15.kvservertests.Runner")
 
-    // Define the classpath to include both main and test sources
     classpath = files(
-        sourceSets["main"].runtimeClasspath,  // Include runtime classpath from main sources
-        sourceSets["test"].runtimeClasspath   // Include runtime classpath from test sources
+        sourceSets["main"].runtimeClasspath,
+        sourceSets["test"].runtimeClasspath
     )
 
-    // Optionally, you can pass any arguments to the Java file
-    args = listOf("arg1", "arg2") // Replace with any arguments needed by your Java file
+    standardInput = System.`in`
 }

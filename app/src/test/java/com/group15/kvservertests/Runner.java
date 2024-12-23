@@ -1,17 +1,21 @@
 package com.group15.kvservertests;
 
 import com.group15.kvserver.ClientLibrary;
+import com.group15.kvserver.utils.Logger;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Scanner;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
+import org.jfree.chart.title.TextTitle;
 import org.jfree.data.xy.XYSeries;
 import org.jfree.data.xy.XYSeriesCollection;
 
@@ -19,6 +23,8 @@ import org.jfree.data.xy.XYSeriesCollection;
 public class Runner {
     private static final String HOST = "localhost";
     private static final int PORT = 12345;
+    public int numBuckets;
+    public int maxClients;
 
     public static void main(String[] args) {
         try {
@@ -30,7 +36,27 @@ public class Runner {
                 return;
             }
 
-            runner.workload1();
+            Scanner scanner = new Scanner(System.in);
+            System.out.print("Enter the number of shards the server has:\n|> ");
+            runner.numBuckets = scanner.nextInt();
+
+            System.out.print("Enter the maximum number of clients the server can handle at the same time:\n|> ");
+            runner.maxClients = scanner.nextInt();
+
+            System.out.println("Select workload to run:");
+            System.out.println("1. Get 1000 random key value pairs");
+            System.out.println("2. Get 1000 operations on the same key (testing hotspot behaviour)");
+            System.out.print("|> ");
+            int workload = scanner.nextInt();
+
+            if (workload == 1) {
+                runner.workload1();
+            } else if (workload == 2) {
+                runner.workload2();
+            } else {
+                Logger.log("Invalid workload selected.", Logger.LogLevel.ERROR);
+            }
+
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -48,9 +74,12 @@ public class Runner {
     }
 
     public void workload1() throws IOException {
-        ExecutorService executorService = Executors.newFixedThreadPool(10);
+        Logger.log("Running workload 1", Logger.LogLevel.INFO);
+
+        ExecutorService executorService = Executors.newFixedThreadPool(maxClients);
         List<Long> responseTimes = new ArrayList<>();
         List<Long> timestamps = new ArrayList<>();
+        ReentrantLock datapointsLock = new ReentrantLock();
         
         Logger.log("Populating database.", Logger.LogLevel.INFO);
         for (int i = 1; i <= 1000; i++) {
@@ -60,13 +89,14 @@ public class Runner {
         for (int i = 1; i <= 1000; i++) {
             final String key = "key" + i;
             final String value = "value" + i;
+            final long workloadStartTime = System.currentTimeMillis();
             executorService.submit(() -> {
                 try {
                     long startTime = System.nanoTime();
                     byte[] returnedValue = get(key);
                     long endTime = System.nanoTime();
                     long duration = endTime - startTime;
-                    long timestamp = System.currentTimeMillis();
+                    long timestamp = System.currentTimeMillis() - workloadStartTime;
 
                     // Verify the value
                     if (returnedValue != null) {
@@ -75,9 +105,12 @@ public class Runner {
                         }
                     }
 
-                    synchronized (responseTimes) {
+                    datapointsLock.lock();
+                    try {
                         responseTimes.add(duration);
                         timestamps.add(timestamp);
+                    } finally {
+                        datapointsLock.unlock();
                     }
                 } catch (IOException e) {
                     Logger.log("Get failed for key " + key + ": " + e.getMessage(), Logger.LogLevel.ERROR);
@@ -94,7 +127,62 @@ public class Runner {
             executorService.shutdownNow();
         }
 
-        generateGraph(responseTimes, timestamps);
+        generateGraph(responseTimes, timestamps, "Get Operation Response time over time for a Server with " + numBuckets + " bucket(s) and " + maxClients + " client(s)", "1000 random key value pairs");
+    }
+
+    public void workload2() throws IOException {
+        Logger.log("Running workload 1", Logger.LogLevel.INFO);
+
+        ExecutorService executorService = Executors.newFixedThreadPool(maxClients);
+        List<Long> responseTimes = new ArrayList<>();
+        List<Long> timestamps = new ArrayList<>();
+        ReentrantLock datapointsLock = new ReentrantLock();
+        
+        Logger.log("Populating database.", Logger.LogLevel.INFO);
+        put("key", ("value").getBytes());
+
+        for (int i = 1; i <= 1000; i++) {
+            final String key = "key";
+            final String value = "value";
+            final long workloadStartTime = System.currentTimeMillis();
+            executorService.submit(() -> {
+                try {
+                    long startTime = System.nanoTime();
+                    byte[] returnedValue = get(key);
+                    long endTime = System.nanoTime();
+                    long duration = endTime - startTime;
+                    long timestamp = System.currentTimeMillis() - workloadStartTime;
+
+                    // Verify the value
+                    if (returnedValue != null) {
+                        if (!value.equals(new String(returnedValue))) {
+                            Logger.log("Value mismatch for key " + key, Logger.LogLevel.ERROR);
+                        }
+                    }
+
+                    datapointsLock.lock();
+                    try {
+                        responseTimes.add(duration);
+                        timestamps.add(timestamp);
+                    } finally {
+                        datapointsLock.unlock();
+                    }
+                } catch (IOException e) {
+                    Logger.log("Get failed for key " + key + ": " + e.getMessage(), Logger.LogLevel.ERROR);
+                }
+            });
+        }
+
+        executorService.shutdown();
+        try {
+            if (!executorService.awaitTermination(1, TimeUnit.MINUTES)) {
+                executorService.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            executorService.shutdownNow();
+        }
+
+        generateGraph(responseTimes, timestamps, "Get Operation Response time over time for a Server with " + numBuckets + " bucket(s) and " + maxClients + " client(s)", "1000 get operations on the same key (testing hotspot behaviour)");
     }
 
     public void put(String key, byte[] value) throws IOException {
@@ -120,21 +208,25 @@ public class Runner {
         return null;
     }
 
-    public void generateGraph(List<Long> responseTimes, List<Long> timestamps) {
+    public void generateGraph(List<Long> responseTimes, List<Long> timestamps, String title, String subtitle) {
         XYSeries series = new XYSeries("Response Time");
     
         for (int i = 0; i < responseTimes.size(); i++) {
-            series.add((Number)(timestamps.get(i) / 1_000_000.0), (Number)(responseTimes.get(i) / 1_000_000.0));
+            series.add((Number)timestamps.get(i), (Number)(responseTimes.get(i) / 1_000_000.0));
         }
     
         XYSeriesCollection dataset = new XYSeriesCollection(series);
     
         JFreeChart chart = ChartFactory.createXYLineChart(
-                "Server Response Time Over Time",
+                title,
                 "Time (ms)",
                 "Response Time (ms)",
                 dataset
         );
+
+        if (subtitle != null && !subtitle.isEmpty()) {
+            chart.addSubtitle(new TextTitle(subtitle));
+        }
     
         ChartPanel chartPanel = new ChartPanel(chart);
         chartPanel.setPreferredSize(new java.awt.Dimension(800, 600));
