@@ -1,6 +1,7 @@
 package com.group15.kvserver;
 
 import java.io.IOException;
+import java.io.EOFException;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -21,14 +22,22 @@ public class Demultiplexer implements AutoCloseable {
     private void reader() {
         try {
             while (!closed) {
-                TaggedConnection.Frame frame = conn.receive();
-                BlockingQueue<byte[]> queue = queues.computeIfAbsent(frame.tag, k -> new ArrayBlockingQueue<>(1024));
-                queue.put(frame.data);
+                try{
+                    TaggedConnection.Frame frame = conn.receive();
+                    BlockingQueue<byte[]> queue = queues.computeIfAbsent(frame.tag, k -> new ArrayBlockingQueue<>(1024));
+                    queue.put(frame.data);
+                } catch (EOFException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
             }
         } catch (IOException | InterruptedException e) {
             if (!closed) {
                 e.printStackTrace();
             }
+        }
+        finally{
+            queues.values().forEach(q -> q.clear());
         }
     }
 
@@ -42,8 +51,8 @@ public class Demultiplexer implements AutoCloseable {
         conn.send(frame);
     }
 
-    public void send(int tag, byte[] data) throws IOException {
-        conn.send(new TaggedConnection.Frame(tag, data));
+    public void send(int tag, short request, byte[] data) throws IOException {
+        conn.send(new TaggedConnection.Frame(tag, request, data));
     }
 
     public byte[] receive(int tag) throws IOException, InterruptedException {

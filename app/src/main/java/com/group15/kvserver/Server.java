@@ -18,7 +18,8 @@ enum RequestType {
     GetRequest((short)3),
     MultiPutRequest((short)4),
     MultiGetRequest((short)5),
-    GetWhenRequest((short)6);
+    GetWhenRequest((short)6),
+    DisconnectRequest((short)7);
 
     private final short value;
 
@@ -78,27 +79,48 @@ class ServerDatabase {
 class ServerWorker implements Runnable {
     private Socket socket;
     private ServerDatabase database;
+    private final Demultiplexer demultiplexer;
 
-    public ServerWorker(Socket socket, ServerDatabase database) {
-        this.socket = socket;
+    public ServerWorker(Socket socket, ServerDatabase database) throws IOException {
+        this.demultiplexer = new Demultiplexer(new TaggedConnection(socket));
         this.database = database;
+        this.socket = socket;
     }
 
     @Override
     public void run() {
         try {
-            DataInputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
-
             boolean running = true;
             while (running) {
+                if (socket.isClosed()) {
+                    running = false;
+                    break;
+                }
+
+                TaggedConnection.Frame frame = new TaggedConnection.Frame(0, (short)0, new byte[0]);
+                try {
+                    byte[] receivedData = demultiplexer.receive(0); // Tag 0 para pedidos
+                    frame = new TaggedConnection.Frame(0, (short)0, receivedData);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                // Processar pedido
+                ByteArrayInputStream bais = new ByteArrayInputStream(frame.data);
+                DataInputStream in = new DataInputStream(bais);
                 try {
                     short requestType = in.readShort();
+                    if (requestType == RequestType.DisconnectRequest.getValue()) {
+                        System.out.println("Client requested disconnect.");
+                        running = false;
+                        demultiplexer.send(frame.tag, requestType, new byte[0]);
+                        break;
+                    }
                     if (requestType >= 0 && requestType < RequestType.values().length) {
                         RequestType r = RequestType.values()[requestType];
-                        DataOutputStream stream = handleRequest(r, in);
-
+                        byte[] stream = handleRequest(r, in);
                         if (stream != null) {
-                            stream.flush();
+                            demultiplexer.send(frame.tag, r.getValue(), stream);
                         }
                     } else {
                         System.out.println("Error -> requestType: " + requestType);
@@ -109,47 +131,60 @@ class ServerWorker implements Runnable {
                     running = false;
                 }
             }
-
-            socket.shutdownInput();
-            socket.shutdownOutput();
-            socket.close();
         }
         catch (IOException e) {
             e.printStackTrace();
-        }
-        finally {
-            System.out.println("Client disconnected.");
-            Server.signalClientDisconnection();
+        } finally {
+            try {
+                demultiplexer.close();
+                socket.close();
+                System.out.println("Socket closed.");
+            } catch (IOException e) {
+                e.printStackTrace();
+            } finally {
+                System.out.println("Client disconnected.");
+                new Thread(Server::signalClientDisconnection).start();
+            }
         }
     }
 
-    public DataOutputStream handleRequest(RequestType requestType, DataInputStream in){
+    public byte[] handleRequest(RequestType requestType, DataInputStream in){
         try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            DataOutputStream out = new DataOutputStream(baos);
             switch (requestType) {
                 case AuthRequest:
-                    return handleAuthRequest(in);
+                    handleAuthRequest(in, out);
+                    break;
                 case RegisterRequest:
-                    return handleRegisterRequest(in);
+                    handleRegisterRequest(in, out);
+                    break;
                 case PutRequest:
-                    return handlePutRequest(in);
+                    handlePutRequest(in, out);
+                    break;
                 case GetRequest:
-                    return handleGetRequest(in);
+                    handleGetRequest(in, out);
+                    break;
                 case MultiPutRequest:
-                    return handleMultiPutRequest(in);
+                    handleMultiPutRequest(in, out);
+                    break;
                 case MultiGetRequest:
-                    return handleMultiGetRequest(in);
+                    handleMultiGetRequest(in, out);
+                    break;
                 case GetWhenRequest:
-                    return handleGetWhenRequest(in);
+                    handleGetWhenRequest(in, out);
+                    break;
                 default:
-                    return null;
+                    break;
             }
+            return baos.toByteArray();
         } catch (IOException e) {
             e.printStackTrace();
             return null;
         }
     }
 
-    private DataOutputStream handleAuthRequest(DataInputStream in) throws IOException {
+    private void handleAuthRequest(DataInputStream in, DataOutputStream out) throws IOException {
         String username = in.readUTF();
         String password = in.readUTF();
         int userShardIndex = database.getUsersShardIndex(username);
@@ -157,11 +192,7 @@ class ServerWorker implements Runnable {
         try {
             Map<String, String> currentShard = database.usersShards.get(userShardIndex);
             if (currentShard.containsKey(username) && currentShard.get(username).equals(password)) {
-                DataOutputStream out = new DataOutputStream(socket.getOutputStream());
                 out.writeBoolean(true);
-                return out;
-            } else {
-                return null;
             }
         } 
         finally {
@@ -169,7 +200,7 @@ class ServerWorker implements Runnable {
         }
     }
 
-    private DataOutputStream handleRegisterRequest(DataInputStream in) throws IOException {
+    private void handleRegisterRequest(DataInputStream in, DataOutputStream out) throws IOException {
         String username = in.readUTF();
         String password = in.readUTF();
         int userShardIndex = database.getUsersShardIndex(username);
@@ -177,45 +208,36 @@ class ServerWorker implements Runnable {
         try {
             Map<String, String> currentShard = database.usersShards.get(userShardIndex);
             if (currentShard.containsKey(username)) {
-                DataOutputStream out = new DataOutputStream(socket.getOutputStream());
                 out.writeBoolean(false);
-                return out;
             } else {
                 currentShard.put(username, password);
-
-                DataOutputStream out = new DataOutputStream(socket.getOutputStream());
                 out.writeBoolean(true);
-                return out;
             }
         } finally {
             database.usersLocks.get(userShardIndex).unlock();
         }
     }
 
-    private DataOutputStream handlePutRequest(DataInputStream in) throws IOException{
+    private void handlePutRequest(DataInputStream in, DataOutputStream out) throws IOException{
         String key = in.readUTF();
         int valueLength = in.readInt();
         byte[] value = new byte[valueLength];
         in.readFully(value);
 
         put(key, value);
-
-        return null;
     }
 
-    private DataOutputStream handleGetRequest(DataInputStream in) throws IOException{
+    private void handleGetRequest(DataInputStream in, DataOutputStream out) throws IOException{
         // KEY
         String key = in.readUTF();
         byte[] value = get(key);
-        DataOutputStream out = new DataOutputStream(socket.getOutputStream());
 
         // VALUE SIZE | VALUE
         out.writeInt(value.length);
         out.write(value);
-        return out;
     }
 
-    private DataOutputStream handleMultiPutRequest(DataInputStream in) throws IOException {
+    private void handleMultiPutRequest(DataInputStream in, DataOutputStream out) throws IOException {
         // N PAIRS | KEY | VALUE LENGTH | VALUE | KEY | VALUE LENGTH | VALUE | ...
         int numberOfPairs = in.readInt();
         Map<String, byte[]> pairs = new java.util.HashMap<>();
@@ -229,11 +251,9 @@ class ServerWorker implements Runnable {
         }
 
         multiPut(pairs);
-
-        return null;
     }
 
-    private DataOutputStream handleMultiGetRequest(DataInputStream in) throws IOException {
+    private void handleMultiGetRequest(DataInputStream in, DataOutputStream out) throws IOException {
         // N KEYS | KEY | ...
         int numberOfKeys = in.readInt();
         Set<String> keys = new java.util.HashSet<>();
@@ -242,7 +262,6 @@ class ServerWorker implements Runnable {
             keys.add(key);
         }
         Map<String, byte[]> pairs = multiGet(keys);
-        DataOutputStream out = new DataOutputStream(socket.getOutputStream());
 
         // N PAIRS | KEY | VALUE LENGTH | VALUE ..
         out.writeInt(numberOfKeys);
@@ -252,11 +271,9 @@ class ServerWorker implements Runnable {
             out.writeInt(value.length);
             out.write(value);
         }
-
-        return out;
     }
 
-    private DataOutputStream handleGetWhenRequest(DataInputStream in) throws IOException {
+    private void handleGetWhenRequest(DataInputStream in, DataOutputStream out) throws IOException {
         // Chaves e valores para a condição
         String key = in.readUTF();
         String keyCond = in.readUTF();
@@ -265,15 +282,12 @@ class ServerWorker implements Runnable {
         in.readFully(valueCond);
 
         byte[] result = getWhen(key, keyCond, valueCond);
-        DataOutputStream out = new DataOutputStream(socket.getOutputStream());
         if (result != null) {
             out.writeInt(result.length);
             out.write(result);
-            return out;
         }
         else{
             out.writeInt(-1);
-            return out;
         }
     }
 
@@ -396,7 +410,6 @@ class ServerWorker implements Runnable {
         targetLock.readLock().lock();
         try {
             Map<String, byte[]> currentShard = database.databaseShards.get(shardIndex);
-            System.out.println("Teste: " + currentShard.get(key));
             return currentShard.get(key);
         } finally {
             targetLock.readLock().unlock();
@@ -427,7 +440,8 @@ class ServerWorker implements Runnable {
 public class Server {
     static int connectedClients = 0;
     static ReentrantLock lock = new ReentrantLock();
-    static Condition allowClientConnection = lock.newCondition();
+    static ReentrantLock lockC = new ReentrantLock();
+    static Condition allowClientConnection = lockC.newCondition();
 
     public static void main(String[] args) throws IOException {
         List<Integer> arguments = new java.util.ArrayList<>();
@@ -454,7 +468,13 @@ public class Server {
             lock.lock();
             try {
                 while (connectedClients >= maxClients) {
-                    allowClientConnection.await();
+                    lockC.lock();
+                    try{
+                        allowClientConnection.await();
+                    }
+                    finally{
+                        lockC.unlock();
+                    }
                 }
 
                 Socket socket = serverSocket.accept();
@@ -465,21 +485,22 @@ public class Server {
 
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
-            } finally {lock.unlock();}
+            } finally {
+                System.out.println("Unlocking");
+                lock.unlock();}
         }
         serverSocket.close();
     }
 
     public static void signalClientDisconnection(){
-        lock.lock();
+        lockC.lock();
         try{
             connectedClients--;
-            allowClientConnection.signalAll();
             System.out.println("Connected clients: " + connectedClients);
+            allowClientConnection.signalAll();
         }
         finally {
-            lock.unlock();
+            lockC.unlock();
         }
     }
-
 }

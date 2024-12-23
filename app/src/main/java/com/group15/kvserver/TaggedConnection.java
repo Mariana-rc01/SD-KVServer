@@ -14,10 +14,12 @@ public class TaggedConnection implements AutoCloseable {
 
     public static class Frame {
         public final int tag;
+        public final short requestType;
         public final byte[] data;
 
-        public Frame(int tag, byte[] data) {
+        public Frame(int tag, short requestType ,byte[] data) {
             this.tag = tag;
+            this.requestType = requestType;
             this.data = data;
         }
     }
@@ -29,13 +31,14 @@ public class TaggedConnection implements AutoCloseable {
     }
 
     public void send(Frame frame) throws IOException {
-        send(frame.tag, frame.data);
+        send(frame.tag, frame.requestType ,frame.data);
     }
 
-    public void send(int tag, byte[] data) throws IOException {
+    public void send(int tag, short request, byte[] data) throws IOException {
         sendLock.lock();
         try {
             out.writeInt(tag); 
+            out.writeShort(request);
             out.writeInt(data.length); 
             out.write(data); 
             out.flush();
@@ -48,10 +51,11 @@ public class TaggedConnection implements AutoCloseable {
         receiveLock.lock();
         try {
             int tag = in.readInt(); 
+            short request = in.readShort();
             int length = in.readInt(); 
             byte[] data = new byte[length];
             in.readFully(data); 
-            return new Frame(tag, data);
+            return new Frame(tag, request, data);
         } finally {
             receiveLock.unlock();
         }
