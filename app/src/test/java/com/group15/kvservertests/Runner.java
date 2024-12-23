@@ -5,8 +5,11 @@ import com.group15.kvserver.utils.Logger;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Scanner;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -46,6 +49,8 @@ public class Runner {
             System.out.println("Select workload to run:");
             System.out.println("1. Get 1000 random key value pairs");
             System.out.println("2. Get 1000 operations on the same key (testing hotspot behaviour)");
+            System.out.println("3. MultiGet 1000 random key value pairs");
+            System.out.println("4. MultiGet 100 operations on the same key (10 keys per multiget)");
             System.out.print("|> ");
             int workload = scanner.nextInt();
 
@@ -53,6 +58,10 @@ public class Runner {
                 runner.workload1();
             } else if (workload == 2) {
                 runner.workload2();
+            } else if (workload == 3) {
+                runner.workload3();
+            } else if (workload == 4) {
+                runner.workload4();
             } else {
                 Logger.log("Invalid workload selected.", Logger.LogLevel.ERROR);
             }
@@ -131,7 +140,7 @@ public class Runner {
     }
 
     public void workload2() throws IOException {
-        Logger.log("Running workload 1", Logger.LogLevel.INFO);
+        Logger.log("Running workload 2", Logger.LogLevel.INFO);
 
         ExecutorService executorService = Executors.newFixedThreadPool(maxClients);
         List<Long> responseTimes = new ArrayList<>();
@@ -185,6 +194,131 @@ public class Runner {
         generateGraph(responseTimes, timestamps, "Get Operation Response time over time for a Server with " + numBuckets + " bucket(s) and " + maxClients + " client(s)", "1000 get operations on the same key (testing hotspot behaviour)");
     }
 
+    public void workload3() throws IOException {
+        Logger.log("Running workload 3", Logger.LogLevel.INFO);
+
+        ExecutorService executorService = Executors.newFixedThreadPool(maxClients);
+        List<Long> responseTimes = new ArrayList<>();
+        List<Long> timestamps = new ArrayList<>();
+        ReentrantLock datapointsLock = new ReentrantLock();
+        
+        Logger.log("Populating database.", Logger.LogLevel.INFO);
+        for (int i = 1; i <= 1000; i++) {
+            put("key" + i, ("value" + i).getBytes());
+        }
+
+        for (int i = 1; i <= 100; i++) {
+            final int currentIteration = i;
+            final long workloadStartTime = System.currentTimeMillis();
+            executorService.submit(() -> {
+                try {
+                    long startTime = System.nanoTime();
+                    Set<String> keys = new HashSet<>();
+                    for (int j = 1; j <= 10; j++) {
+                        keys.add("key" + (currentIteration * j));
+                    }
+                    Map<String, byte[]> returnedValues = multiGet(keys);
+                    long endTime = System.nanoTime();
+                    long duration = endTime - startTime;
+                    long timestamp = System.currentTimeMillis() - workloadStartTime;
+
+                    // Verify the values
+                    for (Map.Entry<String, byte[]> entry : returnedValues.entrySet()) {
+                        String key = entry.getKey();
+                        byte[] value = entry.getValue();
+                        if (value != null) {
+                            if (!("value" + key.substring(3)).equals(new String(value))) {
+                                Logger.log("Value mismatch for key " + key, Logger.LogLevel.ERROR);
+                            }
+                        }
+                    }
+
+                    datapointsLock.lock();
+                    try {
+                        responseTimes.add(duration);
+                        timestamps.add(timestamp);
+                    } finally {
+                        datapointsLock.unlock();
+                    }
+                } catch (IOException e) {
+                    Logger.log("MultiGet failed: " + e.getMessage(), Logger.LogLevel.ERROR);
+                }
+            });
+        }
+
+        executorService.shutdown();
+        try {
+            if (!executorService.awaitTermination(1, TimeUnit.MINUTES)) {
+                executorService.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            executorService.shutdownNow();
+        }
+
+        generateGraph(responseTimes, timestamps, "MultiGet Operation Response time over time for a Server with " + numBuckets + " bucket(s) and " + maxClients + " client(s)", "1000 random key value pairs, 10 keys per multiget");
+    }
+
+    public void workload4() throws IOException {
+        Logger.log("Running workload 4", Logger.LogLevel.INFO);
+
+        ExecutorService executorService = Executors.newFixedThreadPool(maxClients);
+        List<Long> responseTimes = new ArrayList<>();
+        List<Long> timestamps = new ArrayList<>();
+        ReentrantLock datapointsLock = new ReentrantLock();
+        
+        Logger.log("Populating database.", Logger.LogLevel.INFO);
+        put("key", ("value").getBytes());
+
+        for (int i = 1; i <= 100; i++) {
+            final long workloadStartTime = System.currentTimeMillis();
+            executorService.submit(() -> {
+                try {
+                    long startTime = System.nanoTime();
+                    Set<String> keys = new HashSet<>();
+                    for (int j = 1; j <= 10; j++) {
+                        keys.add("key");
+                    }
+                    Map<String, byte[]> returnedValues = multiGet(keys);
+                    long endTime = System.nanoTime();
+                    long duration = endTime - startTime;
+                    long timestamp = System.currentTimeMillis() - workloadStartTime;
+
+                    // Verify the values
+                    for (Map.Entry<String, byte[]> entry : returnedValues.entrySet()) {
+                        String key = entry.getKey();
+                        byte[] value = entry.getValue();
+                        if (value != null) {
+                            if (!("value".equals(new String(value)))) {
+                                Logger.log("Value mismatch for key " + key, Logger.LogLevel.ERROR);
+                            }
+                        }
+                    }
+
+                    datapointsLock.lock();
+                    try {
+                        responseTimes.add(duration);
+                        timestamps.add(timestamp);
+                    } finally {
+                        datapointsLock.unlock();
+                    }
+                } catch (IOException e) {
+                    Logger.log("MultiGet failed: " + e.getMessage(), Logger.LogLevel.ERROR);
+                }
+            });
+        }
+
+        executorService.shutdown();
+        try {
+            if (!executorService.awaitTermination(1, TimeUnit.MINUTES)) {
+                executorService.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            executorService.shutdownNow();
+        }
+
+        generateGraph(responseTimes, timestamps, "MultiGet Operation Response time over time for a Server with " + numBuckets + " bucket(s) and " + maxClients + " client(s)", "100 multiget operations on the same key (10 keys per multiget)");
+    }
+
     public void put(String key, byte[] value) throws IOException {
         ClientLibrary client = new ClientLibrary(HOST, PORT);
         try {
@@ -207,6 +341,19 @@ public class Runner {
 
         return null;
     }
+
+    public Map<String, byte[]> multiGet(Set<String> keys) throws IOException {
+        ClientLibrary client = new ClientLibrary(HOST, PORT);
+        try {
+            Map<String, byte[]> values = client.multiGet(keys);
+            client.close();
+            return values;
+        } catch (IOException e) {
+            Logger.log("MultiGet failed: " + e.getMessage(), Logger.LogLevel.ERROR);
+        }
+
+        return null;
+    } 
 
     public void generateGraph(List<Long> responseTimes, List<Long> timestamps, String title, String subtitle) {
         XYSeries series = new XYSeries("Response Time");
