@@ -8,6 +8,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+
+import com.group15.kvserver.utils.Logger;
+
 import java.util.concurrent.locks.Condition;
 import java.util.Set;
 
@@ -123,7 +126,7 @@ class ServerWorker implements Runnable {
                             demultiplexer.send(frame.tag, r.getValue(), stream);
                         }
                     } else {
-                        System.out.println("Error -> requestType: " + requestType);
+                        Logger.log("Invalid request type: " + requestType, Logger.LogLevel.ERROR);
                     }
                 }
                 catch (EOFException e) {
@@ -426,7 +429,7 @@ class ServerWorker implements Runnable {
 
             if (currentShardCond.containsKey(keyCond)) {
                 Condition condition = database.conditions.get(keyCond);
-                System.out.println("Notifying condition for key: " + keyCond);
+                Logger.log("Notifying condition for key: " + keyCond, Logger.LogLevel.INFO);
                 if (condition != null) {
                     condition.signalAll();
                 }
@@ -459,9 +462,14 @@ public class Server {
             System.out.println("Usage: java Server <max-clients> <database-shards> <user-shards>");
             return;
         }
+
         int maxClients = arguments.get(0);
         ServerDatabase database = new ServerDatabase(arguments.get(1), arguments.get(2));
         ServerSocket serverSocket = new ServerSocket(12345);
+
+        Logger.log("Server started. Listening on port 12345", Logger.LogLevel.INFO);
+        // log maxClients, databaseShards, userShards
+        Logger.log("Max clients: " + maxClients + ", Database shards: " + arguments.get(1), Logger.LogLevel.INFO);
 
         boolean running = true;
         while (running) {
@@ -479,7 +487,7 @@ public class Server {
 
                 Socket socket = serverSocket.accept();
                 connectedClients++;
-                System.out.println("Client connected. Active clients: " + connectedClients);
+                Logger.log("Client connected. Active clients: " + connectedClients, Logger.LogLevel.INFO);
                 Thread worker = new Thread(new ServerWorker(socket, database));
                 worker.start();
 
@@ -496,8 +504,8 @@ public class Server {
         lockC.lock();
         try{
             connectedClients--;
-            System.out.println("Connected clients: " + connectedClients);
             allowClientConnection.signalAll();
+            Logger.log("Client disconnected. Active clients: " + connectedClients, Logger.LogLevel.INFO);
         }
         finally {
             lockC.unlock();
