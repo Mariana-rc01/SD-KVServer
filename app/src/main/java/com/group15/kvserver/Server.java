@@ -504,8 +504,8 @@ public class Server {
         lockC.lock();
         try{
             connectedClients--;
+            System.out.println("Connected clients: " + connectedClients);
             allowClientConnection.signalAll();
-            Logger.log("Client disconnected. Active clients: " + connectedClients, Logger.LogLevel.INFO);
         }
         finally {
             lockC.unlock();
