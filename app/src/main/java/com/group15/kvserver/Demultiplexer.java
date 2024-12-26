@@ -1,11 +1,13 @@
 package com.group15.kvserver;
 
-import java.io.IOException;
 import java.io.EOFException;
+import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+
+import com.group15.kvserver.utils.Logger;
 
 public class Demultiplexer implements AutoCloseable {
     private final TaggedConnection conn;
@@ -65,5 +67,6 @@ public class Demultiplexer implements AutoCloseable {
         closed = true;
         readerThread.interrupt();
         conn.close();
+        Logger.log("Connection closed successfully.", Logger.LogLevel.INFO);
     }
 }

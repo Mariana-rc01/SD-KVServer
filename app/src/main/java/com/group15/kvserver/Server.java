@@ -1,18 +1,22 @@
 package com.group15.kvserver;
 
-import java.io.*;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.EOFException;
+import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import com.group15.kvserver.utils.Logger;
-
-import java.util.concurrent.locks.Condition;
-import java.util.Set;
 
 enum RequestType {
     AuthRequest((short)0),
@@ -146,7 +150,8 @@ class ServerWorker implements Runnable {
                 e.printStackTrace();
             } finally {
                 System.out.println("Client disconnected.");
-                new Thread(Server::signalClientDisconnection).start();
+                // Notificar a desconexão do cliente
+                Server.signalClientDisconnection();
             }
         }
     }
