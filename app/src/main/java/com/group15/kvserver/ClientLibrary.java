@@ -50,7 +50,7 @@ public class ClientLibrary {
         lock.lock();
         try {
             // Envia um pedido de autenticação com as credenciais
-            byte[] requestData = new byte[2 * Integer.BYTES + username.length() + password.length()];
+            byte[] requestData;
             try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 DataOutputStream dos = new DataOutputStream(baos)) {
                 dos.writeShort(RequestType.AuthRequest.getValue());
@@ -73,7 +73,7 @@ public class ClientLibrary {
     public boolean register(String username, String password) throws IOException {
         lock.lock();
         try {
-            byte[] requestData = new byte[2 * Integer.BYTES + username.length() + password.length()];
+            byte[] requestData;
             try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 DataOutputStream dos = new DataOutputStream(baos)) {
                 dos.writeShort(RequestType.RegisterRequest.getValue());
@@ -96,7 +96,7 @@ public class ClientLibrary {
         lock.lock();
         try {
             // Envia um pedido de inserção com a chave e o valor
-            byte[] requestData = new byte[2 * Integer.BYTES + key.length() + value.length];
+            byte[] requestData;
             try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 DataOutputStream dos = new DataOutputStream(baos)) {
                 dos.writeShort(RequestType.PutRequest.getValue());
@@ -105,6 +105,7 @@ public class ClientLibrary {
                 dos.write(value);
                 requestData = baos.toByteArray();
             }
+            System.out.println("Sending put request for key: " + key);
             sendWithTag(RequestType.PutRequest.getValue(), requestData);
         } finally {
             lock.unlock();
@@ -115,7 +116,7 @@ public class ClientLibrary {
         lock.lock();
         try {
             // Envia um pedido de obtenção com a chave
-            byte[] requestData = new byte[Integer.BYTES + key.length()];
+            byte[] requestData;
             try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 DataOutputStream dos = new DataOutputStream(baos)) {
                 dos.writeShort(RequestType.GetRequest.getValue());
@@ -197,7 +198,7 @@ public class ClientLibrary {
         lock.lock();
         try {
             // Envia um pedido de obtenção condicional com a chave, a chave de condição e o valor de condição
-            byte[] requestData = new byte[3 * Integer.BYTES + key.length() + keyCond.length() + valueCond.length];
+            byte[] requestData;
             try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 DataOutputStream dos = new DataOutputStream(baos)) {
                 dos.writeShort(RequestType.GetWhenRequest.getValue());
@@ -225,8 +226,8 @@ public class ClientLibrary {
     public void close() throws IOException {
         lock.lock();
         try {
+            sendDisconnectMessage();
             demultiplexer.close();
-            System.out.println("Connection closed");
         } finally {
             lock.unlock();
         }

@@ -109,7 +109,7 @@ class ServerWorker implements Runnable {
                     byte[] receivedData = demultiplexer.receive(0); // Tag 0 para pedidos
                     frame = new TaggedConnection.Frame(0, (short)0, receivedData);
                 } catch (InterruptedException e) {
-                    e.printStackTrace();
+                    Logger.log(e.getMessage(), Logger.LogLevel.ERROR);
                 }
 
                 // Processar pedido
@@ -140,17 +140,15 @@ class ServerWorker implements Runnable {
             }
         }
         catch (IOException e) {
-            e.printStackTrace();
+            Logger.log(e.getMessage(), Logger.LogLevel.ERROR);
         } finally {
             try {
                 demultiplexer.close();
                 socket.close();
-                System.out.println("Socket closed.");
+                Logger.log("Socket closed.", Logger.LogLevel.INFO);
             } catch (IOException e) {
-                e.printStackTrace();
+                Logger.log(e.getMessage(), Logger.LogLevel.ERROR);
             } finally {
-                System.out.println("Client disconnected.");
-                // Notificar a desconexão do cliente
                 Server.signalClientDisconnection();
             }
         }
@@ -187,7 +185,7 @@ class ServerWorker implements Runnable {
             }
             return baos.toByteArray();
         } catch (IOException e) {
-            e.printStackTrace();
+            Logger.log(e.getMessage(), Logger.LogLevel.ERROR);
             return null;
         }
     }
@@ -509,7 +507,7 @@ public class Server {
         lockC.lock();
         try{
             connectedClients--;
-            System.out.println("Connected clients: " + connectedClients);
+            Logger.log("Client disconnected. Active clients: " + connectedClients, Logger.LogLevel.INFO);
             allowClientConnection.signalAll();
         }
         finally {

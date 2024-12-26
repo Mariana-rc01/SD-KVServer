@@ -1,7 +1,14 @@
 package com.group15.kvserver;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.InputMismatchException;
+import java.util.List;
+import java.util.Map;
+import java.util.Scanner;
+import java.util.Set;
 
 public class ClientUI {
     public static void main(String[] args) {
@@ -31,7 +38,6 @@ public class ClientUI {
             }
 
             if (choice == 3) {
-                client.sendDisconnectMessage();
                 client.close();
                 return;
             }
@@ -230,7 +236,6 @@ public class ClientUI {
             } else {
                 System.out.println("Authentication failed!");
             }
-            //client.close();
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
