@@ -9,24 +9,23 @@ import java.net.Socket;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
+
 public class ClientLibrary {
-    //private Socket socket;
-    //private DataOutputStream out;
-    //private DataInputStream in;
     private TaggedConnection taggedConnection;
     private Demultiplexer demultiplexer;
     private final ReentrantLock lock = new ReentrantLock();
 
+    public Map<Integer, Condition> conditionsMap = new HashMap<>();
+    public Map<Integer, byte[]> responsesMap = new HashMap<>();
+
     public ClientLibrary(String host, int port) throws IOException {
-        /*this.socket = new Socket(host, port);
-        this.in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
-        this.out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
-        */
         Socket socket = new Socket(host, port);
         taggedConnection = new TaggedConnection(socket);
         demultiplexer = new Demultiplexer(taggedConnection);
+        //new Thread(() -> demultiplexer.reader()).start();
     }
 
     private byte[] sendWithTag(short requestType, byte[] requestData) throws IOException {
@@ -222,6 +221,72 @@ public class ClientLibrary {
             lock.unlock();
         }
     }
+
+    /*public byte[] getWhen(String key, String keyCond, byte[] valueCond) throws IOException {
+        int tag = key.hashCode() ^ keyCond.hashCode() ^ java.util.Arrays.hashCode(valueCond);
+    
+        lock.lock();
+        try {
+            byte[] requestData;
+            try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                 DataOutputStream dos = new DataOutputStream(baos)) {
+                dos.writeShort(RequestType.GetWhenRequest.getValue());
+                dos.writeUTF(key);
+                dos.writeUTF(keyCond);
+                dos.writeInt(valueCond.length);
+                dos.write(valueCond);
+                requestData = baos.toByteArray();
+            }
+    
+            TaggedConnection.Frame frame = new TaggedConnection.Frame(0, RequestType.GetWhenRequest.getValue(), requestData);
+            taggedConnection.send(frame.tag, RequestType.GetWhenRequest.getValue(), requestData);
+    
+            conditionsMap.computeIfAbsent(tag, k -> lock.newCondition());
+        } finally {
+            lock.unlock();
+        }
+    
+    
+        lock.lock();
+        try {
+            while (!responsesMap.containsKey(tag)) {
+                try {
+                    conditionsMap.get(tag).await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Interrupted while waiting for condition", e);
+                }
+            }
+    
+            byte[] responseData = responsesMap.get(tag);
+    
+            byte[] result = null;
+            try (ByteArrayInputStream bais = new ByteArrayInputStream(responseData);
+                 DataInputStream dis = new DataInputStream(bais)) {
+                int length = dis.readInt();
+                if (length >= 0) {
+                    result = new byte[length];
+                    dis.readFully(result);
+                }
+            }
+    
+            return result;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void addResponse(int tag, byte[] response) {
+        lock.lock();
+        try {
+            responsesMap.put(tag, response);
+            if (conditionsMap.containsKey(tag)) {
+                conditionsMap.get(tag).signalAll();
+            }
+        } finally {
+            lock.unlock();
+        }
+    }*/
 
     public void close() throws IOException {
         lock.lock();

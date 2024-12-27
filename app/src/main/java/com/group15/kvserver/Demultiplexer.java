@@ -21,7 +21,7 @@ public class Demultiplexer implements AutoCloseable {
         this.readerThread.start();
     }
 
-    private void reader() {
+    public void reader() {
         try {
             while (!closed) {
                 try{
