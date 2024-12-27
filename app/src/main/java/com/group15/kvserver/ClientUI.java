@@ -200,6 +200,8 @@ public class ClientUI {
                                     System.out.println("GetWhen operation: Key = " + key3 + ", Condition Key = " + keyCond + ", Result Value = " + (resultValue != null ? new String(resultValue) : "Key not found."));
                                 } catch (IOException e) {
                                     System.out.println("Error during getWhen operation: " + e.getMessage());
+                                } catch (InterruptedException e) {
+                                    e.printStackTrace();
                                 }
                             });
                             condition.start();

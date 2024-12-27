@@ -6,6 +6,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -193,10 +194,11 @@ public class ClientLibrary {
         }
     }
 
-    public byte[] getWhen(String key, String keyCond, byte[] valueCond) throws IOException {
+    public byte[] getWhen(String key, String keyCond, byte[] valueCond) throws IOException, InterruptedException {
+        int tag = key.hashCode() ^ keyCond.hashCode() ^ Arrays.hashCode(valueCond);
+
         lock.lock();
         try {
-            // Envia um pedido de obtenção condicional com a chave, a chave de condição e o valor de condição
             byte[] requestData;
             try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 DataOutputStream dos = new DataOutputStream(baos)) {
@@ -207,70 +209,24 @@ public class ClientLibrary {
                 dos.write(valueCond);
                 requestData = baos.toByteArray();
             }
-            byte[] responseData = sendWithTag(RequestType.GetWhenRequest.getValue(), requestData);
-            // Lê a resposta
-            try (ByteArrayInputStream bais = new ByteArrayInputStream(responseData);
-                 DataInputStream dis = new DataInputStream(bais)) {
-                int length = dis.readInt();
-                if (length < 0) return null;
-                byte[] data = new byte[length];
-                dis.readFully(data);
-                return data;
-            }
-        } finally {
-            lock.unlock();
-        }
-    }
 
-    /*public byte[] getWhen(String key, String keyCond, byte[] valueCond) throws IOException {
-        int tag = key.hashCode() ^ keyCond.hashCode() ^ java.util.Arrays.hashCode(valueCond);
-    
-        lock.lock();
-        try {
-            byte[] requestData;
-            try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                 DataOutputStream dos = new DataOutputStream(baos)) {
-                dos.writeShort(RequestType.GetWhenRequest.getValue());
-                dos.writeUTF(key);
-                dos.writeUTF(keyCond);
-                dos.writeInt(valueCond.length);
-                dos.write(valueCond);
-                requestData = baos.toByteArray();
-            }
-    
-            TaggedConnection.Frame frame = new TaggedConnection.Frame(0, RequestType.GetWhenRequest.getValue(), requestData);
-            taggedConnection.send(frame.tag, RequestType.GetWhenRequest.getValue(), requestData);
-    
-            conditionsMap.computeIfAbsent(tag, k -> lock.newCondition());
-        } finally {
-            lock.unlock();
-        }
-    
-    
-        lock.lock();
-        try {
-            while (!responsesMap.containsKey(tag)) {
-                try {
-                    conditionsMap.get(tag).await();
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("Interrupted while waiting for condition", e);
+            Condition condition = lock.newCondition();
+            conditionsMap.put(tag, condition);
+
+            try {
+                byte[] responseData = sendWithTag(RequestType.GetWhenRequest.getValue(), requestData);
+                if (responseData.length == 0) {
+                    System.out.println("Waiting for response 1"); // Print para debug (remover após funcionar)
+                    while ((responseData = demultiplexer.receive(tag)).length == 0) { // Operação bloqueante
+                        System.out.println("Waiting for response 2"); // Print para debug (remover após funcionar)
+                    }
+                    System.out.println("Received response"); // Print para debug (remover após funcionar)
                 }
+                conditionsMap.remove(tag);
+                return responseData;
+            } catch (IOException e) {
+                throw new IOException("Error during sendWithTag", e);
             }
-    
-            byte[] responseData = responsesMap.get(tag);
-    
-            byte[] result = null;
-            try (ByteArrayInputStream bais = new ByteArrayInputStream(responseData);
-                 DataInputStream dis = new DataInputStream(bais)) {
-                int length = dis.readInt();
-                if (length >= 0) {
-                    result = new byte[length];
-                    dis.readFully(result);
-                }
-            }
-    
-            return result;
         } finally {
             lock.unlock();
         }
@@ -286,7 +242,7 @@ public class ClientLibrary {
         } finally {
             lock.unlock();
         }
-    }*/
+    }
 
     public void close() throws IOException {
         lock.lock();

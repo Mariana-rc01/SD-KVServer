@@ -286,14 +286,13 @@ class ServerWorker implements Runnable {
         int valueCondLength = in.readInt();
         byte[] valueCond = new byte[valueCondLength];
         in.readFully(valueCond);
-
-        byte[] result = getWhen(key, keyCond, valueCond);
+        byte[] result = getWhen(key, keyCond, valueCond, out);
         if (result != null) {
             out.writeInt(result.length);
             out.write(result);
         }
         else{
-            out.writeInt(-1);
+            // out.writeInt(-1);
         }
     }
 
@@ -391,26 +390,58 @@ class ServerWorker implements Runnable {
         return pairs;
     }
 
-    private byte[] getWhen(String key, String keyCond, byte[] valueCond) throws IOException {
+    private byte[] getWhen(String key, String keyCond, byte[] valueCond, DataOutputStream out) throws IOException {
         int shardIndexCond = database.getDatabaseShardIndex(keyCond);
         ReentrantReadWriteLock lock = database.databaseLocks.get(shardIndexCond);
+        Condition condition;
         lock.writeLock().lock();
         try {
             Map<String, byte[]> currentShardCond = database.databaseShards.get(shardIndexCond);
-            Condition condition = lock.writeLock().newCondition();
-            database.conditions.put(keyCond, condition);
+            condition = database.conditions.computeIfAbsent(keyCond, k -> lock.writeLock().newCondition());
 
-            while (!java.util.Arrays.equals(currentShardCond.get(keyCond), valueCond)) {
-                try {
-                    condition.await();
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
+            // Check the condition before waiting
+            if (java.util.Arrays.equals(currentShardCond.get(keyCond), valueCond)) {
+                Logger.log("Condition met for key: " + keyCond, Logger.LogLevel.INFO);
+                return fetchTargetValue(key);
             }
         } finally {
             lock.writeLock().unlock();
         }
 
+        final Condition finalCondition = condition;
+        Runnable task = () -> {
+            lock.writeLock().lock();
+            try {
+                Map<String, byte[]> currentShardCond = database.databaseShards.get(shardIndexCond);
+                while (!java.util.Arrays.equals(currentShardCond.get(keyCond), valueCond)) {
+                    try {
+                        finalCondition.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        Logger.log("Interrupted while waiting for condition on key: " + keyCond, Logger.LogLevel.ERROR);
+                        return;
+                    }
+                }
+                byte[] result = fetchTargetValue(key);
+                if (result != null) {
+                    Logger.log("Condition met for key: " + keyCond, Logger.LogLevel.INFO);
+                    out.write(result.length); // Fita cola
+                    out.write(result); // Fita cola
+                    out.flush(); // Fita cola
+                    Logger.log("Sent result for key: " + keyCond, Logger.LogLevel.INFO);
+                 }
+            } catch (IOException e) {
+                e.printStackTrace();
+            } finally {
+                lock.writeLock().unlock();
+            }
+        };
+        new Thread(task).start();
+
+        return null;
+    }
+
+    private byte[] fetchTargetValue(String key) throws IOException {
         int shardIndex = database.getDatabaseShardIndex(key);
         ReentrantReadWriteLock targetLock = database.databaseLocks.get(shardIndex);
         targetLock.readLock().lock();
@@ -420,7 +451,6 @@ class ServerWorker implements Runnable {
         } finally {
             targetLock.readLock().unlock();
         }
-
     }
 
     private void updateConditionAndNotify(String keyCond) {
