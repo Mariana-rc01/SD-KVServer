@@ -237,6 +237,7 @@ public class ClientUI {
 
             } else {
                 System.out.println("Authentication failed!");
+                client.close();
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
