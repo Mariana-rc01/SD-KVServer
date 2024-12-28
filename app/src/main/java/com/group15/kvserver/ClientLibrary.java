@@ -14,6 +14,9 @@ import java.util.concurrent.locks.ReentrantLock;
 
 
 public class ClientLibrary {
+    //private Socket socket;
+    //private DataOutputStream out;
+    //private DataInputStream in;
     private TaggedConnection taggedConnection;
     private Demultiplexer demultiplexer;
     private final ReentrantLock lock = new ReentrantLock();
@@ -23,12 +26,13 @@ public class ClientLibrary {
     public Map<Integer, byte[]> responsesMap = new HashMap<>();
 
     public ClientLibrary(String host, int port) throws IOException {
+        /*this.socket = new Socket(host, port);
+        this.in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+        this.out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
+        */
         Socket socket = new Socket(host, port);
         taggedConnection = new TaggedConnection(socket);
         demultiplexer = new Demultiplexer(taggedConnection);
-
-        demultiplexer.setClientLibrary(this);
-        new Thread(demultiplexer::reader).start();
     }
 
     private byte[] sendWithTag(short requestType, byte[] requestData) throws IOException {
