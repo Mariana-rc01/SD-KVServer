@@ -33,6 +33,9 @@ public class ClientLibrary {
         Socket socket = new Socket(host, port);
         taggedConnection = new TaggedConnection(socket);
         demultiplexer = new Demultiplexer(taggedConnection);
+
+        demultiplexer.setClientLibrary(this);
+        new Thread(demultiplexer::reader).start();
     }
 
     private byte[] sendWithTag(short requestType, byte[] requestData) throws IOException {
