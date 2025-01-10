@@ -60,8 +60,6 @@ class ServerDatabase {
     List<ReentrantLock> usersLocks;
     /* Conditions to notify */
     Map<String, Condition> conditions;
-    /* Global lock for managing concurrency */
-    ReentrantLock globalLock = new ReentrantLock();
 
     /**
      * Constructor initializes the server database with the specified number of shards.
@@ -442,14 +440,9 @@ class ServerWorker implements Runnable {
             pairsByShard.get(shardIndex).put(key, entry.getValue());
         }
 
-        database.globalLock.lock();
-        try {
-            for(Map.Entry<Integer, Map<String, byte[]>> shardPairs : pairsByShard.entrySet()) {
-                int shardIndex = shardPairs.getKey();
-                database.databaseLocks.get(shardIndex).writeLock().lock();
-            }
-        } finally {
-            database.globalLock.unlock();
+        for(Map.Entry<Integer, Map<String, byte[]>> shardPairs : pairsByShard.entrySet()) {
+            int shardIndex = shardPairs.getKey();
+            database.databaseLocks.get(shardIndex).writeLock().lock();
         }
 
         for(Map.Entry<Integer, Map<String, byte[]>> shardPairs : pairsByShard.entrySet()) {
@@ -483,15 +476,9 @@ class ServerWorker implements Runnable {
             keysByShard.get(shardIndex).add(key);
         }
 
-        database.globalLock.lock();
-        try{
-            for (Map.Entry<Integer, List<String>> entry : keysByShard.entrySet()) {
-                int shardIndex = entry.getKey();
-                database.databaseLocks.get(shardIndex).readLock().lock();
-            }
-        }
-        finally {
-            database.globalLock.unlock();
+        for (Map.Entry<Integer, List<String>> entry : keysByShard.entrySet()) {
+            int shardIndex = entry.getKey();
+            database.databaseLocks.get(shardIndex).readLock().lock();
         }
 
         for(Map.Entry<Integer, List<String>> shardKeys : keysByShard.entrySet()) {
