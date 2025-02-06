@@ -1,5 +1,7 @@
 # Distributed key-value storage database 🔑
 
+## Grade: 19.1/20 :star:
+
 This project was developed for the Distributed Systems course, part of the third-year curriculum in the Software Engineering bachelor's program at the University of Minho. It focuses on implementing a key-value storage database optimized for handling concurrent operations from multiple clients.
 
 This project obtained a final grade of **19.1/20** 💎
